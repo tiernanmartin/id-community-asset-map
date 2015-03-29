@@ -22,6 +22,12 @@ if (!require("ggmap")) {
   library(ggmap)
 }
 
+if (!require("stringr")) {
+  install.packages("stringr", dependencies = TRUE)
+  library(stringr)
+}
+
+
 ###############################################################
 ### B) Read in data and transform it into database format ##
 ###############################################################
@@ -31,51 +37,33 @@ if (!require("ggmap")) {
 
 setwd("/Users/tiernanmartin/Documents/GitHub/id-community-asset-map//data") # Set the working directory
 
-list.files(path = ".") #Check out the names of the files
+aptbldg_geocoded.df <- read.csv(file = "AptBldg_geocoded.csv", header = TRUE, sep = ",") # Bring in the geocoded .csv's as data frames
+commbldg_geocoded.df <- read.csv(file = "CommBldg_geocoded.csv", header = TRUE, sep = ",") 
+resbldg_geocoded.df <- read.csv(file = "ss_resbldg_geocoded.csv", header = TRUE, sep = ",")
 
-commbldg.df <- read.csv(file = "EXTR_CommBldg.csv", header = TRUE, sep = ",") # Bring in the .csv's as data frames
-resbldg.df <- read.csv(file = "EXTR_ResBldg.csv", header = TRUE, sep = ",")
-aptbldg.df <- read.csv(file = "EXTR_AptComplex.csv", header = TRUE, sep = ",")
-bldgpermits.df <- read.csv(file = "Building_Permits___2014-08-27.csv", header = TRUE, sep = ",")
-
-##################################################################
-### C) Trim dataframes to only 98104, 98134, and 98144 records ###
-##################################################################
-
-commbldg.df <- filter(commbldg.df, ZipCode == "98104" |
-                        ZipCode == "98134" |
-                        ZipCode == "98144")
-
-resbldg.df <- filter(resbldg.df, ZipCode == "98104" |
-                        ZipCode == "98134" |
-                        ZipCode == "98144")
-
-aptbldg.df <- aptbldg.df[grepl("98104$|98134$|98144$", aptbldg.df$Address), ] #Uses regex to filter by zip code because the zip code is embedded in the full address
+aptbldg_trimmed.df <- read.csv(file = "aptbldg_trimmed.csv", header = TRUE, sep = ",") #Bring in the trimmed .csv's to be processed
+commbldg_trimmed.df <- read.csv(file = "commbldg_trimmed.csv", header = TRUE, sep = ",")
+resbldg_trimmed.df <- read.csv(file = "resbldg_trimmed.csv", header = TRUE, sep = ",")
 
 
-###############################################################################
-### D) Geocode the addresses then trim dataframes by Latitude and Longitude ###
-###############################################################################
+################################################################################
+### C) Processes the data frames, adding columns and trimming by lat. & long.###
+################################################################################
 
-latupper <- 47.601171   # Sets variables for the latitude and longitude boundary 
+latupper <- 47.601171   # Sets variables for the (approximate) latitude and longitude boundary 
 latlower <- 47.593863
 longwest <- -122.328946
 longeast <- -122.310483
 
-aptbldg.df$Address <- as.character(aptbldg.df$Address) # Change Address column from factor to character
-
-#NOTE:  the following process takes about 10 minutes. Remove the '#' in order to run it.
-#aptbldg_geocoded.df <- geocode(aptbldg.df$Address, output = "latlona") #Geocode the addresses (uses Google Maps API)
-#write.csv(aptbldg_geocoded.df, file = "AptBldg_geocoded.csv")
-
-
-aptbldg.df <-      # Create a new dataframe with Lat., Long., and any other desired columns
-  aptbldg.df %>%
+aptbldg_processed.df <-      # Create a new dataframe with Lat., Long., and any other desired columns
+  aptbldg_trimmed.df %>%
    mutate(Address = aptbldg_geocoded.df$address,  # Add geocoded Address, Long., Lat.
          Longitude = aptbldg_geocoded.df$lon,
-         Latitude = aptbldg_geocoded.df$lat) %>%
+         Latitude = aptbldg_geocoded.df$lat,
+         Type = "Multi-Family Residential") %>%
    select(Major,                                  # Select desired columns
          Minor,
+         Type,
          Address,
          Longitude,
          Latitude,
@@ -93,18 +81,16 @@ aptbldg.df <-      # Create a new dataframe with Lat., Long., and any other desi
              Longitude <= longeast) %>%
    arrange(desc(Latitude))                        # Arrange by Lat. (descending)
 
-commbldg.df$Address <- as.character (commbldg.df$Address)
-#commbldg_geocoded.df <- geocode(commbldg.df$Address, output = "latlona")
 
-write.csv(commbldg_geocoded.df, file = "CommBldg_geocoded.csv")
-
-commbldg.df <-
-    commbldg.df %>%
+commbldg_processed.df <-
+    commbldg_trimmed.df %>%
     mutate(Address = commbldg_geocoded.df$address,
            Longitude = commbldg_geocoded.df$lon,
-           Latitude = commbldg_geocoded.df$lat) %>%
+           Latitude = commbldg_geocoded.df$lat,
+           Type = "Commercial") %>%
     select(Major,
            Minor,
+           Type,
            Address,
            Longitude,
            Latitude,
@@ -120,54 +106,28 @@ commbldg.df <-
    arrange(desc(Latitude))
 
 
-bldgpermits.df <- 
-  bldgpermits.df %>%
-   filter(Latitude <= latupper &
-          Latitude >= latlower &
-          Longitude >= longwest &
-          Longitude <= longeast &
-          Status != "CANCELLED") %>%
-   select(Address,
-          Permit.Type,
-          Action.Type,
-          Application.Date,
-          Value,
-          Category,
-          Longitude,
-          Latitude) %>%
-   arrange(desc(Value))
-
-
-resbldg.df$Address <- as.character(resbldg.df$Address) # Change Address column from factor to character
-
-
-resbldg_98104.df <-
-   resbldg.df %>%
-   filter(ZipCode == "98104") # While the ID neighborhood boundary includes 3 zipcodes
-                              # (98104, 98134, 98144), only 98104 has res. buildings
-
-resbldg_98104_geocoded.df <- geocode(resbldg_98104.df$Address, output = "latlona")
-
-resbldg_98104.df <-
-  resbldg_98104.df %>%
-  mutate(NewAddress = resbldg_98104_geocoded.df$address,
-         Longitude = resbldg_98104_geocoded.df$lon,
-         Latitude = resbldg_98104_geocoded.df$lat,
-         AvgUnitSize = SqFtTotLiving/NbrLivingUnits) %>% # This divides the total living space by the number of units
-  slice(2:3) %>%                                        # This removes the first row, which in this dataset happens to be outside the ID (it's zipcode is incorrect)
+resbldg_processed.df <-
+  resbldg_trimmed.df %>%
+  mutate(ss_Address = paste(resbldg_geocoded.df$X.delivery_line_1.,resbldg_geocoded.df$X.city_name.,resbldg_geocoded.df$X.state_abbreviation.,resbldg_geocoded.df$ZIP, sep = " "),
+         Longitude = resbldg_geocoded.df$X.longitude.,
+         Latitude = resbldg_geocoded.df$X.latitude.,
+         AvgUnitSize = SqFtTotLiving/NbrLivingUnits,
+         Type = "Single-Family Residential") %>%
   select(Major,
          Minor,
-         Address = NewAddress,
+         Type,
+         Address = ss_Address,
          Longitude,
          Latitude,
-         Units = NbrLivingUnits,
          Stories,
+         Units = NbrLivingUnits,
          AvgUnitSize,
-         Condition) %>%
-  arrange(desc(Latitude))
-
-names(aptbldg.df)
-names(commbldg.df)
-names(resbldg_98104.df)
-names(bldgpermits.df)
+         Condition,
+         Year = YrBuilt) %>%
+  filter(Latitude <= latupper &
+           Latitude >= latlower &
+           Longitude >= longwest &
+           Longitude <= longeast) %>%
+  arrange(desc(AvgUnitSize)) %>%
+  distinct(Longitude, Latitude)    # This removes any duplicates (e.g. if a building has two units, only the larger of the two is retained)
 
